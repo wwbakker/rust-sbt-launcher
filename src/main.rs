@@ -1,6 +1,7 @@
 use std::process::{Command, Child, Stdio};
 use std::io::{self, BufRead, BufReader};
 use std::thread;
+use std::env;
 use colored::{Colorize, Color};
 use std::sync::mpsc;
 
@@ -44,22 +45,38 @@ fn spawn_and_color_sbt_stdout_notify(
     });
 }
 
+fn set_window_title_to_cwd() {
+    if let Ok(cwd) = env::current_dir() {
+        if let Some(dir) = cwd.file_name().and_then(|n| n.to_str()) {
+            // ANSI escape: ESC ] 0 ; title BEL
+            print!("\x1b]0;{} - sbt\x07", dir);
+            // Ensure it is flushed to the terminal
+            use std::io::Write;
+            std::io::stdout().flush().ok();
+        }
+    }
+}
+
 fn main() {
+    set_window_title_to_cwd();
+
     let (tx, rx) = mpsc::channel();
     match start_sbt_background() {
         Ok(mut childbg) => {
             println!("background sbt started with PID: {}", childbg.id());
             if let Some(stdout) = childbg.stdout.take() {
                 // Change Color::Green to any Color you want
-                spawn_and_color_sbt_stdout_notify(stdout, Color::Green, tx);
+                spawn_and_color_sbt_stdout_notify(stdout, Color::TrueColor { r: 75, g: 75, b: 75 }, tx);
             }
 
              // Wait for notification that sbt server has started
             rx.recv().expect("Failed to receive notification from sbt output thread");
 
-            match Command::new("sbt").spawn() {
+            // Collect command line arguments, skipping the first (program name)
+            let args: Vec<String> = env::args().skip(1).collect();
+            match Command::new("sbt").args(&args).spawn() {
                 Ok(mut childfg) => {
-                    println!("foreground sbt started with PID: {}", childfg.id());
+                    println!("foreground sbt started with PID: {} and args: {:?}", childfg.id(), args);
                     match childfg.wait() {
                         Ok(status) => {
                             println!("foreground sbt exited with status: {}", status);
