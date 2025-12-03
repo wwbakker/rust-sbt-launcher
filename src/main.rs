@@ -1,3 +1,6 @@
+use std::sync::{Arc, Mutex};
+use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
 use std::process::{Command, Child, Stdio};
 use std::io::{self, BufRead, BufReader};
 use std::thread;
@@ -75,9 +78,23 @@ fn main() {
             // Collect command line arguments, skipping the first (program name)
             let args: Vec<String> = env::args().skip(1).collect();
             match Command::new("sbt").args(&args).spawn() {
-                Ok(mut childfg) => {
+                Ok(childfg) => {
                     println!("foreground sbt started with PID: {} and args: {:?}", childfg.id(), args);
-                    match childfg.wait() {
+
+                    // Set up Ctrl+C handler to forward SIGINT to foreground sbt
+                    let childfg_arc = Arc::new(Mutex::new(childfg));
+                    let childfg_arc_clone = Arc::clone(&childfg_arc);
+                    ctrlc::set_handler(move || {
+                        let child = childfg_arc_clone.lock().unwrap();
+                        let pid = child.id() as i32;
+                        let _ = signal::kill(Pid::from_raw(pid), Signal::SIGINT);
+                    }).expect("Error setting Ctrl-C handler");
+
+                    let status = {
+                        let mut child = childfg_arc.lock().unwrap();
+                        child.wait()
+                    };
+                    match status {
                         Ok(status) => {
                             println!("foreground sbt exited with status: {}", status);
                             match childbg.kill() {
