@@ -41,7 +41,7 @@ fn spawn_and_color_sbt_stdout_notify(
             }
             let clean = strip_ansi_escapes(&line);
             print!("{}", clean.color(color));
-            if clean.contains("started sbt server") || clean.contains("Running multiple instances is unsupported") {
+            if clean.contains("started sbt server") || clean.contains("sbt server started at") || clean.contains("Running multiple instances is unsupported") {
                 let _ = notify.send(());
             }
         }
